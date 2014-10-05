@@ -1,36 +1,50 @@
 // Check a URL in blacklists extension
 // https://github.com/one10/
 
-// defaults
-var blacklistUrls = new Array();
-blacklistUrls['ysb'] = "http://yandex.ru/infected?url=";
-blacklistUrls['gsb'] = "http://www.google.com/safebrowsing/diagnostic?site=";
-// phishtank is just the front page so didn't bother with options
-blacklistUrls['phishtank'] = "http://www.phishtank.com/";
+var extraChecksScript = "./extra_checks.js";
 
-function getBlacklistUrlFromOpts(blacklistName) {
-    return localStorage[blacklistName + "_url"] ? localStorage[blacklistName + "_url"] : blacklistUrls[blacklistName];
+// defaults
+var blacklistData = new Array();
+blacklistData.push({
+    'url': 'http://yandex.ru/infected?url=',
+    'handler': getBackgroundBl,
+    'name': 'gsb'
+});
+blacklistData.push({
+    'url': 'http://www.google.com/safebrowsing/diagnostic?site=',
+    'handler': getBackgroundBl,
+    'name': 'ysb'
+});
+// phishtank is just the front page so didn't bother with options
+blacklistData.push({
+    'url': 'http://www.phishtank.com/',
+    'handler': postToPhishtank,
+    'name': 'phishtank'
+});
+
+
+function getBlacklistUrlFromOpts(blacklistObj) {
+    blacklistName = blacklistObj.name;
+    return localStorage[blacklistName + "_url"] ? localStorage[blacklistName + "_url"] : blacklistObj.url;
 }
 
 // this one is very phishtank-specific and will change
-function postToPhishtank(targetUrl, tabId) {
-    chrome.tabs.executeScript(tabId, {
-        code: "document.getElementsByName('isaphishurl')[0].value='" 
-                + targetUrl + "';document.getElementsByTagName('form')[1].submit();"
-    }, null);
-}
-
-function openActiveTab(blacklistUrl, targetUrl, blacklistHandler) {
+function postToPhishtank(blacklistUrl, targetUrl) {
     chrome.tabs.create({
         url: blacklistUrl,
         active: true
     }, function(tab) {
-        blacklistHandler(targetUrl, tab.id);
+
+
+        chrome.tabs.executeScript(tab.id, {
+            code: "document.getElementsByName('isaphishurl')[0].value='" 
+                + targetUrl + "';document.getElementsByTagName('form')[1].submit();"
+        }, null);
     });
-    alert('submitted');
+    window.close();
 }
 
-function openBackgroundBlacklistByGet(blacklistUrl, targetUrl) {
+function getBackgroundBl(blacklistUrl, targetUrl) {
     targetUrl = blacklistUrl + encodeURIComponent(targetUrl);
     chrome.tabs.create({
         url: targetUrl,
@@ -38,14 +52,26 @@ function openBackgroundBlacklistByGet(blacklistUrl, targetUrl) {
     });
 }
 
+function loadScript(scriptName, callback) {
+    var scriptEl = document.createElement('script');
+    scriptEl.src = chrome.extension.getURL(scriptName);
+    scriptEl.addEventListener('load', callback, false);
+    document.head.appendChild(scriptEl);
+}
+
 function click(e) {
+    loadScript(extraChecksScript, process);
+}
+
+function process() {
     targetUrl = document.querySelector('#urlbox').value
     if (targetUrl.lastIndexOf("http://", 0) !== 0) {
         targetUrl = "http://" + targetUrl;
     }
-    openBackgroundBlacklistByGet(getBlacklistUrlFromOpts("ysb"), targetUrl);
-    openBackgroundBlacklistByGet(getBlacklistUrlFromOpts("gsb"), targetUrl);
-    openActiveTab(getBlacklistUrlFromOpts("phishtank"), targetUrl, postToPhishtank);
+    var arrayLength = blacklistData.length;
+    for (var i = 0; i < arrayLength; i++) {
+        blacklistData[i].handler(getBlacklistUrlFromOpts(blacklistData[i]), targetUrl);
+    }
 }
 
 // action for the extension popup form
